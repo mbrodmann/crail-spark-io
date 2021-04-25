@@ -397,7 +397,8 @@ class CrailDispatcher () extends Logging {
     if (fs != null){
       if (executorId == "driver"){
         if (deleteOnClose){
-          fs.delete(rootDir, true).get()
+          val tmp = fs.delete(rootDir, true).get()
+          tmp.syncDir()
         }
       }
 
