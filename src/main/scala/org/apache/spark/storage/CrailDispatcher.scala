@@ -54,13 +54,15 @@ class CrailDispatcher () extends Logging {
   val appId: String = conf.getAppId
   val serializer = SparkEnv.get.serializer
 
-  val rootDir = "/spark"
-  val broadcastDir = rootDir + "/broadcast"
-  val shuffleDir = rootDir + "/shuffle"
-  val rddDir = rootDir + "/rdd"
-  val tmpDir = rootDir + "/tmp"
-  val metaDir = rootDir + "/meta"
-  val hostsDir = metaDir + "/hosts"
+  val dirExtensionOpt: Option[String] = sys.env.get("DIR_EXTENSION")
+  val dirExtension: String = dirExtensionOpt.getOrElse("")
+  val rootDir = "/spark" + dirExtension
+  val broadcastDir = rootDir + "/broadcast" + dirExtension
+  val shuffleDir = rootDir + "/shuffle" + dirExtension
+  val rddDir = rootDir + "/rdd" + dirExtension
+  val tmpDir = rootDir + "/tmp" + dirExtension
+  val metaDir = rootDir + "/meta" + dirExtension
+  val hostsDir = metaDir + "/hosts" + dirExtension
 
   var deleteOnClose : Boolean = _
   var deleteOnStart : Boolean = _
