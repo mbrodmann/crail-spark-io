@@ -21,10 +21,11 @@
 
 package org.apache.spark.shuffle.crail
 
+import org.apache.crail.{CrailLocationClass, CrailNodeType, CrailStorageClass}
 import org.apache.spark._
 import org.apache.spark.common._
 import org.apache.spark.serializer.{CrailSerializer, SerializerManager}
-import org.apache.spark.shuffle.{CrailShuffleSorter, BaseShuffleHandle, ShuffleReader}
+import org.apache.spark.shuffle.{BaseShuffleHandle, CrailShuffleSorter, FetchFailedException, ShuffleReader}
 import org.apache.spark.storage._
 
 
@@ -46,14 +47,53 @@ class CrailShuffleReader[K, C](
 
   /** Read the combined key-values for this reduce task */
   override def read(): Iterator[Product2[K, C]] = {
-    val multiStream = CrailDispatcher.get.getMultiStream(handle.shuffleId, startPartition)
-    val deserializationStream = serializerInstance.deserializeCrailStream(multiStream)
-    dep.keyOrdering match {
-      case Some(keyOrd: Ordering[K]) =>
-        new CrailInputCloser(deserializationStream, crailSorter.sort(context, keyOrd, dep.serializer, deserializationStream))
-      case None =>
-        new CrailInputCloser(deserializationStream, deserializationStream.asKeyValueIterator.asInstanceOf[Iterator[Product2[K, C]]])
+    
+    var res: Iterator[Product2[K, C]] = null
+    
+    try {
+      val multiStream = CrailDispatcher.get.getMultiStream(handle.shuffleId, startPartition)
+      val deserializationStream = serializerInstance.deserializeCrailStream(multiStream)
+      dep.keyOrdering match {
+        case Some(keyOrd: Ordering[K]) =>
+          res = new CrailInputCloser(deserializationStream, crailSorter.sort(context, keyOrd, dep.serializer, deserializationStream))
+        case None =>
+          res = new CrailInputCloser(deserializationStream, deserializationStream.asKeyValueIterator.asInstanceOf[Iterator[Product2[K, C]]])
+      } 
+    } catch {
+      case e:Throwable => {
+        println("Experimental: Error when reading shuffle data ...")
+        val ffe = new FetchFailedException(blockManager.blockManagerId, dep.shuffleId, 0, 0, 0,cause=e)
+        context.setFetchFailed(ffe)
+
+        // create directories if gone missing
+        val shuffleDir = CrailDispatcher.get.shuffleDir
+        val shuffleIdDir = shuffleDir+"/shuffle_"+dep.shuffleId
+
+        try {
+          CrailDispatcher.get.fs.create(shuffleDir, CrailNodeType.DIRECTORY, CrailDispatcher.get.shuffleStorageClass, CrailLocationClass.DEFAULT, true).get().syncDir()
+        } catch {
+          case e: Throwable =>
+        }
+
+        try {
+          CrailDispatcher.get.fs.create(shuffleIdDir, CrailNodeType.DIRECTORY, CrailStorageClass.PARENT, CrailLocationClass.DEFAULT, true).get().syncDir()
+        } catch {
+          case e: Throwable =>
+        }
+
+        var i = 0
+        while (i < dep.partitioner.numPartitions) {
+          val subDir = shuffleIdDir + "/" + "part_" + i.toString
+          try {
+            CrailDispatcher.get.fs.create(subDir, CrailNodeType.MULTIFILE, CrailStorageClass.PARENT, CrailLocationClass.DEFAULT, true).get().syncDir()
+          } catch {
+            case e: Throwable =>
+          }
+          i+=1
+        }
       }
+    }
+    res
   }
 }
 
