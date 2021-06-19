@@ -424,31 +424,45 @@ class CrailDispatcher () extends Logging {
 
   /* Register a shuffle with the manager and obtain a handle for it to pass to tasks. */
   def registerShuffle(shuffleId: Int, partitions: Int) : Unit = {
-    //logInfo("registering shuffle " + shuffleId + ", time " + ", cacheSize " + fs.getCacheSize)
-    val shuffleStore = new CrailShuffleStore
-    val oldStore = shuffleCache.putIfAbsent(shuffleId, shuffleStore)
-    val futureQueue = new LinkedBlockingQueue[Future[CrailNode]]()
-    val start = System.currentTimeMillis()
-    val shuffleIdDir = shuffleDir + "/shuffle_" + shuffleId
-    var future : Future[CrailNode] = fs.create(shuffleIdDir, CrailNodeType.DIRECTORY, CrailStorageClass.PARENT, CrailLocationClass.DEFAULT, true)
-    futureQueue.add(future)
-    var i = 0
-    while (i < partitions) {
-      val subDir = shuffleIdDir + "/" + "part_" + i.toString
-      future = fs.create(subDir, CrailNodeType.MULTIFILE, CrailStorageClass.PARENT, CrailLocationClass.DEFAULT, true)
-      futureQueue.add(future)
-      i+=1
+    
+    var done = false
+    
+    while(!done) {
+      try {
+        //logInfo("registering shuffle " + shuffleId + ", time " + ", cacheSize " + fs.getCacheSize)
+        val shuffleStore = new CrailShuffleStore
+        val oldStore = shuffleCache.putIfAbsent(shuffleId, shuffleStore)
+        val futureQueue = new LinkedBlockingQueue[Future[CrailNode]]()
+        val start = System.currentTimeMillis()
+        val shuffleIdDir = shuffleDir + "/shuffle_" + shuffleId
+        
+        try {
+          fs.create(shuffleIdDir, CrailNodeType.DIRECTORY, CrailStorageClass.PARENT, CrailLocationClass.DEFAULT, true).get().syncDir()  
+        } catch {
+          case e: Throwable =>
+        }
+        
+        var i = 0
+        while (i < partitions) {
+          val subDir = shuffleIdDir + "/" + "part_" + i.toString
+          try {
+            fs.create(subDir, CrailNodeType.MULTIFILE, CrailStorageClass.PARENT, CrailLocationClass.DEFAULT, true).get().syncDir()  
+          } catch {
+            case e: Throwable =>
+          }
+          i+=1
+        }
+        val end = System.currentTimeMillis()
+        val executionTime = (end - start) / 1000.0
+        done = true
+      } catch {
+        case e: Throwable => {
+          println("Failed to register shuffle " + shuffleId)
+        }
+      }  
     }
-    val fileQueue = new LinkedBlockingQueue[CrailNode]()
-    while(!futureQueue.isEmpty){
-      val file = futureQueue.poll().get()
-      fileQueue.add(file)
-    }
-    while(!fileQueue.isEmpty){
-      fileQueue.poll().syncDir()
-    }
-    val end = System.currentTimeMillis()
-    val executionTime = (end - start) / 1000.0
+    
+    
   }
 
   /* Register a shuffle with the manager and obtain a handle for it to pass to tasks. */

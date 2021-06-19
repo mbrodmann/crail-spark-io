@@ -66,8 +66,15 @@ class CrailShuffleReader[K, C](
         context.setFetchFailed(ffe)
 
         // create directories if gone missing
+        val rootDir = CrailDispatcher.get.rootDir
         val shuffleDir = CrailDispatcher.get.shuffleDir
         val shuffleIdDir = shuffleDir+"/shuffle_"+dep.shuffleId
+
+        try {
+          CrailDispatcher.get.fs.create(rootDir, CrailNodeType.DIRECTORY, CrailDispatcher.get.shuffleStorageClass, CrailLocationClass.DEFAULT, true).get().syncDir()
+        } catch {
+          case e: Throwable =>
+        }
 
         try {
           CrailDispatcher.get.fs.create(shuffleDir, CrailNodeType.DIRECTORY, CrailDispatcher.get.shuffleStorageClass, CrailLocationClass.DEFAULT, true).get().syncDir()
