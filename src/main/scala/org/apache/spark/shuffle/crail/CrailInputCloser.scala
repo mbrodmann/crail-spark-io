@@ -21,12 +21,16 @@
 
 package org.apache.spark.shuffle.crail
 
+import org.apache.spark.TaskContext
+import org.apache.spark.storage.BlockManager
+import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.serializer.CrailDeserializationStream
 
 /**
  * Created by stu on 24.09.16.
  */
-class CrailInputCloser[K, C](deserializationStream: CrailDeserializationStream, baseIter: Iterator[Product2[K, C]]) extends Iterator[Product2[K, C]]{
+class CrailInputCloser[K, C](deserializationStream: CrailDeserializationStream, baseIter: Iterator[Product2[K, C]],
+   taskContext: TaskContext, blockManager: BlockManager, shuffleId: Int, mapId: Long, mapIndex: Int, reduceId: Int) extends Iterator[Product2[K, C]]{
 
 
   override def hasNext: Boolean = {
@@ -38,7 +42,17 @@ class CrailInputCloser[K, C](deserializationStream: CrailDeserializationStream, 
   }
 
   override def next(): Product2[K, C] = {
-    baseIter.next()
+    try {
+      baseIter.next()
+    } catch {
+      case e: Throwable => {
+        println("Caught exception in CrailInputCloser.next() and marked as failed")
+        val ffe = new FetchFailedException(blockManager.blockManagerId, shuffleId, 0, 0, 0, cause=e)
+        taskContext.setFetchFailed(ffe)
+        //taskContext.markTaskFailed(e)
+      }
+      return null
+    }
   }
 
 
